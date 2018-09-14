@@ -40,7 +40,7 @@ global $input_errors;
 global $savemsg;
 
 // fetch release archive
-$return_val = mwexec("fetch {$verify_hostname} -vo {$install_dir}/master.zip 'https://github.com/crestAT/nas4free-{$configName}/releases/download/{$version_striped}/{$configName}-{$vs}.zip'", false);
+$return_val = mwexec("fetch {$verify_hostname} -vo {$install_dir}/master.zip 'https://github.com/crestAT/nas4free-{$configName}/releases/download/{$version_striped}/{$configName}-{$version_striped}.zip'", false);
 if ($return_val == 0) {
     $return_val = mwexec("tar -xf {$install_dir}/master.zip -C {$install_dir} --exclude='.git*' --strip-components 2", true);
     if ($return_val == 0) {
@@ -58,7 +58,7 @@ if ($return_val == 0) {
     }
 }
 else { 
-    $input_errors[] = sprintf(gettext("Archive file %s not found, installation aborted!"), "master.zip"); 
+    $input_errors[] = sprintf(gettext("Archive file %s not found, installation aborted!"), "{$configName}-{$version_striped}.zip"); 
     return;
 }
 
