@@ -1,0 +1,504 @@
+#!/bin/sh
+# mysqlinit
+# MySQL Extension for NAS4Free/XigmaNAS 11.x and later.
+# Debug script
+#set -x
+
+# Copyright (c) 2018 José Rivera (JoseMR)
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that following conditions are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS 'AS IS' AND ANY
+# EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+# (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+# ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+# THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+# Set environment.
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+
+# Determine full working directory.
+CWDIR=$(dirname $(realpath $0))
+
+# Global variables.
+PLATFORM=$(uname -m)
+PRODUCT=$(uname -i)
+PRDVERSION=$(uname -r | cut -d '-' -f1 | tr -d '.')
+PRDPLATFORM=$(cat /etc/platform)
+SCRIPTNAME=$(basename $0)
+APPVERSION=$(cat ${CWDIR}/version 2> /dev/null)
+CONFIG="/cf/conf/config.xml"
+APPNAME="mysql" # Set product accordingly.
+SQLVERSION="80" # Set version accordingly.
+ADDON="MySQL"
+FULLAPPNAME="${ADDON} Extension"
+PKGCONF="/etc/pkg/FreeBSD.conf"
+PKGCACHE="/var/cache/pkg"
+PKGDB="/var/db/pkg"
+VARDB="/var/db"
+RCDNAME="${APPNAME}-server"
+USRLOCAL="/usr/local"
+MYSQLPATH="${USRLOCAL}/share/${APPNAME}"
+MYSQLRCD="${USRLOCAL}/etc/rc.d/${APPNAME}-server"
+INSTALLPATH="${CWDIR}/${APPNAME}"
+PIDFILE=""
+RCDPATH="${USRLOCAL}/etc/rc.d"
+CMDNAME="${APPNAME}-server"
+RCCONF="/etc/rc.conf"
+PRDSERVER="${APPNAME}${SQLVERSION}-server"
+PRDCLIENT="${APPNAME}${SQLVERSION}-client"
+MYSQLDEPENDENCY="libedit libevent liblz4 protobuf re2" # Set required dependencies accordingly, note that some are already included by the OS.
+MARIADBDEPENDENCY=""
+PACKAGEVER="${PRDSERVER} ${PRDCLIENT}"
+
+error_notify()
+{
+	# Logg and notify message on error and exit.
+	MSG="an error has occurred during initialize"
+	logger -t "${SCRIPTNAME}" "${MSG}"
+	echo -e "$*" >&2; exit 1
+}
+
+update_freebsdconf()
+{
+	# Update FreeBSD.conf to fetch latest packages.
+	if [ -f "${PKGCONF}" ]; then 
+		if grep -q "quarterly" ${PKGCONF}; then
+			sed -i '' -E "s/quarterly/latest/g" ${PKGCONF} || \
+			error_notify "Error: A problem has occurred while updating FreeBSD.conf file."
+		fi
+	fi
+}
+
+mysql_initial_download()
+{
+	if [ ! -f "${INSTALLPATH}/${USRLOCAL}/share/${APPNAME}/mysql.server" ]; then
+		# Check if MySQL already exist.
+		if [ ! -f "${MYSQLPATH}/mysql.server" ]; then
+			# Update FreeBSD.conf file.
+			update_freebsdconf
+
+			# Fetch latest MySQL packages and required dependencies.
+			for pkg in ${PACKAGELIST}
+				do
+					PKG=$(ls ${CWDIR}/download/All | grep -w "${pkg}" | awk NR==1{print})
+					if [ ! -f ${PKGCACHE}/${PKG} ]; then
+						pkg fetch -y -o ${CWDIR}/download ${pkg} || \
+						error_notify "Error: A problem has occurred while fetching/locating ${pkg}."
+					fi
+			done
+		fi
+	fi
+}
+
+mysql_native_download()
+{
+	# Check if MySQL already exist.
+	if [ ! -f "${MYSQLPATH}$/mysql.server" ]; then
+		# Update FreeBSD.conf file.
+		update_freebsdconf
+
+		# Install latest MySQL package.
+		if ! pkg info | grep -q ${PRDSERVER}; then
+			pkg install -y ${PRDSERVER}
+		fi
+	fi
+}
+
+pkg_upgrade()
+{
+	# Update FreeBSD.conf file.
+	update_freebsdconf
+
+	echo "Looking for new ${APPNAME} packages..."
+
+	if [ "${PRDPLATFORM}" = "x64-embedded" ]; then
+		PACKAGELIST="${PRDSERVER} ${PRDCLIENT}"
+
+		# Set product version variables.
+		# We have to use the manifest file for version comparison for Embedded platform.
+		SERVERVER=$(grep '"version":"' ${CWDIR}/${APPNAME}/${PRDSERVER}/+MANIFEST | cut -d',' -f3 | egrep -o "([0-9]{1,}\.)+[0-9]{1,}" | tr -d '.')
+		CLIENTVER=$(grep '"version":"' ${CWDIR}/${APPNAME}/${PRDCLIENT}/+MANIFEST | cut -d',' -f3 | egrep -o "([0-9]{1,}\.)+[0-9]{1,}" | tr -d '.')
+		NEWSERVERVER=$(pkg search ${PRDSERVER} | cut -d'-' -f3 | tr -d '.' | cut -d' ' -f1)
+		NEWCLIENTVER=$(pkg search ${PRDCLIENT} | cut -d'-' -f3 | tr -d '.' | cut -d' ' -f1)
+
+		# Extract new fetched packages for Embedded platform on new versions.
+		if [ "${NEWSERVERVER}" -gt "${SERVERVER}" ]; then
+			RESTART=1
+			echo "New ${PRDSERVER} package found, performing upgrade..."
+			NEWSERVERVER_SET=$(pkg search ${PRDSERVER} | cut -d'-' -f3 | cut -d' ' -f1)
+			pkg fetch -y -o ${CWDIR}/download ${PRDSERVER}-${NEWSERVERVER_SET} || \
+			error_notify "Error: A problem has occurred while fetching/locating ${pkg}."
+			echo "Extracting ${PRDSERVER}-${NEWSERVERVER_SET}..."
+			tar -Jxf ${CWDIR}/download/All/${PRDSERVER}-${NEWSERVERVER_SET}.txz -C ${CWDIR}/${APPNAME}/ || \
+			error_notify "Error: A problem has occurred while extractig files."
+			mv ${CWDIR}/${APPNAME}/+* ${CWDIR}/${APPNAME}/${PRDSERVER}/
+		else
+			echo "No new ${PRDSERVER} package available!"
+		fi
+
+		if [ "${NEWCLIENTVER}" -gt "${CLIENTVER}" ]; then
+			RESTART=1
+			echo "New ${PRDCLIENT} package found, performing upgrade..."
+			NEWCLIENTVER_SET=$(pkg search ${PRDCLIENT} | cut -d'-' -f3 | cut -d' ' -f1)
+			pkg fetch -y -o ${CWDIR}/download ${PRDCLIENT}-${NEWCLIENTVER_SET} || \
+			error_notify "Error: A problem has occurred while fetching/locating ${pkg}."
+			echo "Extracting ${PRDCLIENT}-${NEWCLIENTVER_SET}..."
+			tar -Jxf ${CWDIR}/download/All/${PRDCLIENT}-${NEWCLIENTVER_SET}.txz -C ${CWDIR}/${APPNAME}/ || \
+			error_notify "Error: A problem has occurred while extractig files."
+			mv ${CWDIR}/${APPNAME}/+* ${CWDIR}/${APPNAME}/${PRDCLIENT}/
+		else
+			echo "No new ${PRDCLIENT} package available!"
+		fi
+
+	elif [ "${PRDPLATFORM}" = "x64-full" ]; then
+		# Set current versions.
+		SERVERVER=$(pkg info | grep ${PRDSERVER} | cut -d'-' -f3 | tr -d '.' | cut -d' ' -f1)
+		CLIENTVER=$(pkg info | grep ${PRDCLIENT} | cut -d'-' -f3 | tr -d '.' | cut -d' ' -f1)
+
+		pkg upgrade -y ${PRDSERVER}
+
+		# Set new versions.
+		NEWSERVERVER=$(pkg info | grep ${PRDSERVER} | cut -d'-' -f3 | tr -d '.' | cut -d' ' -f1)
+		NEWCLIENTVER=$(pkg info | grep ${PRDCLIENT} | cut -d'-' -f3 | tr -d '.' | cut -d' ' -f1)
+		if [ "${NEWSERVERVER}" -gt "${SERVERVER}" ]; then
+			RESTART=1
+		elif [ "${NEWCLIENTVER}" -gt "${CLIENTVER}" ]; then
+			RESTART=1
+		fi
+	fi
+
+	# Restart mysql after upgrades only.
+	if [ "${RESTART}" = "1" ]; then
+		service ${CMDNAME} onerestart 2> /dev/null || ${MYSQLRCD} onerestart
+	fi
+}
+
+mysql_pkg_extract()
+{
+	# Extract fetched packages for Embedded platform.
+	if [ ! -d ${CWDIR}/${APPNAME} ]; then
+		mkdir -p ${CWDIR}/${APPNAME}
+	fi
+
+	for pkg in ${PACKAGELIST}
+		do
+			PKG=$(ls ${CWDIR}/download/All | grep -w "${pkg}" | awk NR==1{print})
+			if [ ! -f ${CWDIR}/${APPNAME}/${pkg}/+MANIFEST ]; then
+				echo "Extracting ${pkg}..."
+				tar -Jxf ${CWDIR}/download/All/${PKG} -C ${CWDIR}/${APPNAME}/ || \
+				error_notify "Error: A problem has occurred while extractig files."
+				mkdir -p ${CWDIR}/${APPNAME}/${pkg}
+				mv ${CWDIR}/${APPNAME}/+* ${CWDIR}/${APPNAME}/${pkg}
+				echo "Done!"
+			fi
+	done
+}
+
+clear_cache()
+{
+	if [ "${PRDPLATFORM}" = "x64-embedded" ]; then
+		if [ -d ${CWDIR}/download/All ]; then
+			echo "Cleaning cache..."
+			cd ${CWDIR}/download/All
+			for file in *.txz; do
+				rm -f ${file}
+			done
+		fi
+	elif [ "${PRDPLATFORM}" = "x64-full" ]; then
+		pkg clean -y
+	else
+		echo "Nothing to do."
+	fi
+}
+
+display_versions()
+{
+	# Display MySQL version from internal command.
+	${APPNAME} --version
+	if [ "${PRDPLATFORM}" = "x64-embedded" ]; then
+		# Get product versions from manifest.
+		for pkg in ${PACKAGEVER}
+			do
+			VERSION=$(grep '"version":"' ${CWDIR}/${APPNAME}/${pkg}/+MANIFEST | cut -d',' -f3 | egrep -o "([0-9]{1,}\.)+[0-9]{1,}")
+			echo "${pkg} ${VERSION}"
+		done
+	elif [ "${PRDPLATFORM}" = "x64-full" ]; then
+		# Get product versions from pkg info.
+		for pkg in ${PACKAGEVER}
+			do
+				pkg info | grep -E "${pkg}"
+		done
+	fi
+}
+
+product_check()
+{
+	# Check for working product and set dependencies.
+	if [ "${APPNAME}" = "mysql" ]; then
+		PACKAGELIST="${PRDSERVER} ${PRDCLIENT} ${MYSQLDEPENDENCY}"
+	elif [ "${APPNAME}" = "mariadb" ]; then
+		PACKAGELIST="${PRDSERVER} ${PRDCLIENT} ${MARIADBDEPENDENCY}"
+	fi
+}
+
+platform_check()
+{
+	# Check for working platform.
+	if [ "${PRDPLATFORM}" = "x64-embedded" ]; then
+		mysql_initial_download
+		mysql_pkg_extract
+		mysql_symlinkdir
+		postinit_cmd
+	elif [ "${PRDPLATFORM}" = "x64-full" ]; then
+		mysql_native_download
+		postinit_cmd
+	fi
+}
+
+postinit_cmd()
+{
+	# Check and generate temporary php script for postinit command.
+	if ! grep -qw ${CWDIR}/${SCRIPTNAME} ${CONFIG}; then
+		touch ${CWDIR}/postinit || error_notify "Error: A problem has occurred while creating the postinit file."
+		chmod +x ${CWDIR}/postinit
+		if [ ! "${PRDVERSION}" -ge "110" ]; then
+			# Generate php script for NAS4Free 10.3 versions.
+			cat << EOF > ${CWDIR}/postinit
+<?php
+require_once("config.inc");
+require_once("functions.inc");
+\$cmd = dirname(__FILE__)."/${SCRIPTNAME}";
+	\$i =0;
+	if ( is_array(\$config['rc']['postinit'] ) && is_array( \$config['rc']['postinit']['cmd'] ) ) {
+		for (\$i; \$i < count(\$config['rc']['postinit']['cmd']);) {
+			if (preg_match('/${SCRIPTNAME}/', \$config['rc']['postinit']['cmd'][\$i])) break; ++\$i; }
+	}
+	\$config['rc']['postinit']['cmd'][\$i] = \$config['cmd']."\$cmd";
+	write_config();
+?>
+EOF
+		else
+			# Generate php script for NAS4Free/XigmaNAS 11.x versions.
+			cat << EOF > ${CWDIR}/postinit
+<?php
+require_once("config.inc");
+require_once("functions.inc");
+\$cmd = dirname(__FILE__)."/${SCRIPTNAME}";
+\$name = "${ADDON} Extension";
+\$comment = "Start ${ADDON}";
+\$rc = &array_make_branch(\$config,'rc','param'); 
+if(false === array_search_ex(\$name,\$rc,'name')):
+	\$rc_param = [];
+	\$rc_param['uuid'] = uuid();
+	\$rc_param['name'] = \$name;
+	\$rc_param['value'] = \$cmd;
+	\$rc_param['comment'] = \$comment;
+	\$rc_param['typeid'] = '2';
+	\$rc_param['enable'] = true;
+	\$rc[] = \$rc_param;
+	write_config();
+endif;
+unset(\$rc);
+?>
+EOF
+		fi
+
+		# Execute temporary php script.
+		if [ "${OBI_INSTALL}" != "ON" ]; then
+			php-cgi -f ${CWDIR}/postinit && rm ${CWDIR}/postinit
+		fi
+	fi
+}
+
+mysql_usergroup()
+{
+	# Check and create plex user/group.
+	if ! /usr/sbin/pw groupshow mysql >/dev/null 2>&1; then
+		/usr/sbin/pw groupadd mysql -g 88 >/dev/null 2>&1
+	fi
+	if ! /usr/sbin/pw usershow mysql >/dev/null 2>&1; then
+		/usr/sbin/pw useradd mysql -u 88 -g 88 -c 'MySQL Daemon' -d /var/db/mysql -s /usr/sbin/nologin >/dev/null 2>&1
+	fi
+}
+
+mysql_database()
+{
+	# Create required db directories in a safe place.
+	# This place should have proper permissions.
+	# This might be overridden by an GUI wrapper.
+	if [ ! -d ${CWDIR}/mysqldata ]; then
+		mkdir -p ${CWDIR}/mysqldata
+	fi
+	if [ ! -d ${CWDIR}/mysqldata/mysql ]; then
+		mkdir -p ${CWDIR}/mysqldata/mysql
+		chown mysql:mysql ${CWDIR}/mysqldata/mysql
+	fi
+	if [ ! -d ${CWDIR}/mysqldata/mysql_secure ]; then
+		mkdir -p ${CWDIR}/mysqldata/mysql_secure
+		chown mysql:mysql ${CWDIR}/mysqldata/mysql_secure
+	fi
+	if [ ! -d ${CWDIR}/mysqldata/mysql_tmpdir ]; then
+		mkdir -p ${CWDIR}/mysqldata/mysql_tmpdir
+		chown mysql:mysql ${CWDIR}/mysqldata/mysql_tmpdir
+	fi
+
+	# Link required db directories to /var/db.
+	cd ${CWDIR}/mysqldata
+	for file in *
+		do
+			ln -Ffhs ${CWDIR}/mysqldata/${file} ${VARDB}/${file}
+	done
+}
+
+mysql_symlinkdir()
+{
+	# Check and create/relink required symlinks/dirs for MySQL.
+	# This environment will be checked each time the script is started for consistency.
+	# This section might require update upon further package changes.
+	cd ${INSTALLPATH}/${USRLOCAL}/bin
+	for file in *
+		do
+			ln -Ffhs ${INSTALLPATH}/${USRLOCAL}/bin/${file} ${USRLOCAL}/bin/${file}
+	done
+
+	cd ${INSTALLPATH}/${USRLOCAL}/include
+	for file in *
+		do
+			ln -Ffhs ${INSTALLPATH}/${USRLOCAL}/include/${file} ${USRLOCAL}/include/${file}
+	done
+
+	cd ${INSTALLPATH}/${USRLOCAL}/lib
+	for file in *
+		do
+			ln -Ffhs ${INSTALLPATH}/${USRLOCAL}/lib/${file} ${USRLOCAL}/lib/${file}
+	done
+
+	cd ${INSTALLPATH}/${USRLOCAL}/libexec
+	for file in *
+		do
+			ln -Ffhs ${INSTALLPATH}/${USRLOCAL}/libexec/${file} ${USRLOCAL}/libexec/${file}
+	done
+
+	cd ${INSTALLPATH}/${USRLOCAL}/share
+	for file in *
+		do
+			ln -Ffhs ${INSTALLPATH}/${USRLOCAL}/share/${file} ${USRLOCAL}/share/${file}
+	done
+
+	cd ${INSTALLPATH}/${USRLOCAL}/etc
+	for file in *
+		do
+		if [ ! -d ${USRLOCAL}/etc/${file} ]; then
+			ln -Ffhs ${INSTALLPATH}/${USRLOCAL}/etc/${file} ${USRLOCAL}/etc/${file}
+		fi
+	done
+
+	# Check and copy required libdata files.
+	cd ${INSTALLPATH}/${USRLOCAL}/
+	LOCALFILES="libdata"
+	for file in ${LOCALFILES}
+		do
+			cp -rp ${INSTALLPATH}/${USRLOCAL}/${file} ${USRLOCAL}/${file}
+	done
+
+	# Check and link required man files.
+	MANFILES="man1 man3 man5 man7 man8"
+	for file in ${MANFILES}
+		do
+			if [ ! -d ${USRLOCAL}/man/${file} ]; then
+				mkdir -p ${USRLOCAL}/man/${file}
+				ln -fhs ${INSTALLPATH}/${USRLOCAL}/man/${file}/* ${USRLOCAL}/man/${file}/
+			elif [ -d ${USRLOCAL}/man/${file} ]; then
+				ln -fhs ${INSTALLPATH}/${USRLOCAL}/man/${file}/* ${USRLOCAL}/man/${file}/
+			fi
+	done
+
+	# Copy rcd file.
+	cp -rp ${INSTALLPATH}/${USRLOCAL}/etc/rc.d/${RCDNAME} ${USRLOCAL}/etc/rc.d/${RCDNAME}
+}
+
+mysql_rcparam_start()
+{
+	# MySQL rc parameters.
+	if ! grep -q "${APPNAME}_enable=\"NO\"" ${RCCONF}; then
+		sysrc ${APPNAME}_enable="NO" >/dev/null 2>&1
+	fi
+
+	# Start MySQL.
+	if ! ps -acx | grep -q "mysqld"; then
+		service ${CMDNAME} onestart 2> /dev/null || ${MYSQLRCD} onestart
+	fi
+
+	# Logg on startup success, else logging with faults.
+	if [ $? -eq 0 ]; then
+		MSG="script has been started successfully!"
+		logger -t ${SCRIPTNAME} ${MSG}
+	else
+		MSG="script started with faults"
+		logger -t ${SCRIPTNAME} ${MSG}
+	fi
+}
+
+mysql_init()
+{
+	# Check for system compatibility.
+	if [ ! "${PLATFORM}" = "amd64" ]; then
+		echo "Unsupported platform!"; exit 1
+	fi 
+	# Check for product compatibility.
+	if [ ! "${PRDVERSION}" -ge "110" ]; then
+		echo "Unsupported version!"; exit 1
+	fi
+
+	# Link mysqlinit to /usr/local/sbin.
+	if [ ! -f "${USRLOCAL}/sbin/mysqlinit" ]; then
+		ln -fs ${CWDIR}/mysqlinit ${USRLOCAL}/sbin/
+	fi
+
+	echo "Initializing ${APPNAME}..."
+
+	# Function calls.
+	product_check
+	platform_check
+	mysql_usergroup
+	mysql_database
+	mysql_rcparam_start
+}
+
+# MySQL common control switches.
+while getopts ":osprcvuh" option; do
+	case ${option} in
+		[h]) echo "Usage: ${SCRIPTNAME} -[option]";
+		echo "Options:"
+		echo "      -s  Start ${APPNAME} Server."
+		echo "      -p  Stop ${APPNAME} Server."
+		echo "      -r  Restart ${APPNAME} Server."
+		echo "      -c  Delete package cache."
+		echo "      -v  Display product version."
+		echo "      -u  Upgrade ${APPNAME} packages."
+		echo "      -h  Display this help message."; exit 0 ;;
+		[o]) OBI_INSTALL="ON";; # To prevent nested PHP-CGI call for installation with OBI.
+		[s]) service ${CMDNAME} onestart 2> /dev/null || ${MYSQLRCD} onestart; exit 0 ;;
+		[p]) service ${CMDNAME} onestop 2> /dev/null || ${MYSQLRCD} onestop; exit 0 ;;
+		[r]) service ${CMDNAME} onerestart 2> /dev/null || ${MYSQLRCD} onerestart; exit 0 ;;
+		[c]) clear_cache; exit 0;;
+		[v]) display_versions; exit 0 ;;
+		[u]) pkg_upgrade; exit 0 ;;
+		[?]) echo "Invalid option, -h for usage."; exit 1 ;;
+	esac
+done
+
+mysql_init
