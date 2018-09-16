@@ -65,7 +65,7 @@ if (isset($_POST['ext_cleanup']) && $_POST['ext_cleanup']) {
 	ext_remove_rc_commands($configName);
 // remove extension pages/links
     require_once("{$configuration['rootfolder']}/{$configName}-stop.php");
-    mwexec("");
+    mwexec("rm -R {$configuration['rootfolder']}");
 	header("Location:index.php");
 }
 
@@ -95,22 +95,30 @@ bindtextdomain($domain, $localeExtDirectory);
         <?php if (!empty($input_errors)) print_input_errors($input_errors);?>
         <?php if (!empty($savemsg)) print_info_box($savemsg);?>
         <table width="100%" border="0" cellpadding="6" cellspacing="0">
-            <?php html_titleline(gettext("Extension Update"));?>
-			<?php html_text("ext_version_current", gettext("Installed version"), $configuration['version']);?>
-			<?php html_text("ext_version_server", gettext("Latest version"), $server_version);?>
-			<?php html_separator();?>
+            <?php 
+				html_titleline(gettext("Extension Update"));
+				html_text("ext_version_current", gettext("Installed version"), $configuration['version']);
+				html_text("ext_version_server", gettext("Latest version"), $server_version);
+				html_separator();
+			?>
         </table>                                                                                                   
         <div id="update_remarks">
-            <?php html_remark("note_remove", gettext("Note"), gettext("Removing this extension from the server will leave the installation folder untouched - remove the files using Windows Explorer, FTP or some other tool of your choice. <br /><b>Please note: this page will no longer be available.</b> You'll have to re-run extension installation to get it back on your server."));?>
+            <?php html_remark("note_remove", gettext("Note"), gettext("Removing the extension from the server will leave the installation and data folders untouched.<br />
+				Uninstalling will remove the extension and delete all extension folders including the data folders from the system."));?>
             <br />
-            <input id="ext_update" name="ext_update" type="submit" class="formbtn" value="<?=gettext("Update Extension");?>" onclick="return confirm('<?=gettext("The selected operation will be completed. Please do not click any other buttons!");?>')" />
-            <input id="ext_remove" name="ext_remove" type="submit" class="formbtn" value="<?=gettext("Remove Extension");?>" onclick="return confirm('<?=gettext("Do you really want to remove the extension from the system?");?>')" />
-            <input id="ext_cleanup" name="ext_cleanup" type="submit" class="formbtn" value="<?=gettext("Uninstall Extension");?>" onclick="return confirm('<?=gettext("Do you really want to uninstall the extension and delete all extension folders from the system?");?>')" />
+            <input id="ext_update" name="ext_update" type="submit" class="formbtn" value="<?=gettext("Update");?>" 
+				onclick="return confirm('<?=gettext("The selected operation will be completed. Please do not click any other buttons!");?>')" />
+            <input id="ext_remove" name="ext_remove" type="submit" class="formbtn" value="<?=gettext("Remove");?>" 
+				onclick="return confirm('<?=gettext("Do you really want to remove the extension from the system?");?>')" />
+            <input id="ext_cleanup" name="ext_cleanup" type="submit" class="formbtn" value="<?=gettext("Uninstall");?>" 
+				onclick="return confirm('<?=gettext("Do you really want to remove the extension and delete all extension folders from the system?");?>')" />
         </div>
         <table width="100%" border="0" cellpadding="6" cellspacing="0">
-			<?php html_separator();?>
-			<?php html_separator();?>
-			<?php html_titleline(gettext("Extension")." ".gettext("Release Notes"));?>
+			<?php 
+				html_separator();
+				html_separator();
+				html_titleline(gettext("Extension")." ".gettext("Release Notes"));
+			?>
 			<tr>
                 <td class="listt">
                     <div>

@@ -25,7 +25,7 @@
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
     SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-$version = "v0.1-b01";													// extension version
+$version = "v0.1b1";													// extension version
 $appName = "MySQL";
 $configName = strtolower($appName);
 

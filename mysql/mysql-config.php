@@ -2,17 +2,20 @@
 /* 
     mysql-config.php
 
+    Copyright (c) 2017 - 2018 Andreas Schmidhuber
+    All rights reserved.
+
+	Mysqlinit addon: Copyright (c) 2018 José Rivera (JoseMR)
+	All rights reserved.
+
+	Portions of Plex Media Server Extension: Copyright (c) 2018 José Rivera (JoseMR)
+	All rights reserved.
+
 	MySQL: Copyright (c) 2000, 2018, Oracle and/or its affiliates. All rights reserved.
 	Oracle is a registered trademark of Oracle Corporation and/or its
 	affiliates. Other names may be trademarks of their respective
 	owners.
 	
-	mysqlinit add-on: Copyright (c) 2018 José Rivera (JoseMR)
-	All rights reserved.
-
-    Copyright (c) 2017 - 2018 Andreas Schmidhuber
-    All rights reserved.
-
     Redistribution and use in source and binary forms, with or without
     modification, are permitted provided that the following conditions are met:
 
@@ -60,17 +63,29 @@ if (!isset($configuration) || !is_array($configuration)) $configuration = array(
 // initialize variables --------------------------------------------------
 $pidfile = "/var/tmp/mysql.sock.lock";
 $logfile = "{$configuration['rootfolder']}/{$configName}_ext.log";
+$logBackupDate = "{$configuration['rootfolder']}/{$configName}_backup-date.txt";
 $logUpgrade = "{$configuration['rootfolder']}/{$configName}_upgrade.log";
 $mySqlConfFile = "{$configuration['rootfolder']}/mysql/usr/local/etc/mysql/my.cnf";
 $productVersion = exec("{$configuration['rootfolder']}/mysqlinit -v | awk '/-server/ {print $2}'");
 $appName = "{$configuration['appname']} ".gettext("Server");			// for gettext
-$clientDir = "adminer";													// alt: mywebsql  
+$clientDir = "adminer";													// alt: mywebsql
+$backupFailedMsg = gettext("Last backup failed!");  
 // -----------------------------------------------------------------------
 
 // Retrieve WebUI URL
 $ipaddr = get_ipaddr($config['interfaces']['lan']['if']);
 $url = htmlspecialchars("{$config['websrv']['protocol']}://{$ipaddr}:{$config['websrv']['port']}/{$clientDir}");
 $urlWebUI = "<a href='{$url}' target='_blank'>{$url}</a>";
+
+// check if SQL client is installable / able to run
+if (!isset($config['websrv']['enable']) || !is_dir($config['websrv']['documentroot'])) {
+	$webServerReady = false;
+	$webServerMsg = " &#8594; ".sprintf(gettext("The %s cannot be installed / used if the webserver is not properly set up and running!"), gettext("SQL Database Administration Client"));	
+}
+else {
+	$webServerReady = true;
+	$webServerMsg = "";
+}
 
 function get_process_info() {
     global $pidfile;
@@ -100,12 +115,14 @@ if ($_POST) {
 			$configuration['port'] = $_POST['port'];
 			$configuration['listen'] = $_POST['listen'];
 			$configuration['auxparam'] = $_POST['auxparam'];
-		    $configuration['dbClient'] = isset($_POST['dbClient']);
+			$configuration['backuppath'] = $_POST['backuppath'];
+		    $configuration['dbclient'] = isset($_POST['dbclient']);
 			if (($configuration['port'] == "") || ($configuration['listen'] == ""))		// catch input errors
 				$input_errors[] = sprintf(gettext("Parameter %s and/or %s must not be empty!"), gettext("Port"), gettext("IP Address"));
 			else {
+				// db client installation
 				$errorDbClient = " ";
-				if ($configuration['dbClient'] && !is_file("{$config['websrv']['documentroot']}/{$clientDir}/index.php")) {	// install db administration client
+				if ($configuration['dbclient'] && $webServerReady && !is_file("{$config['websrv']['documentroot']}/{$clientDir}/index.php")) {	// install db administration client
 				    #$return_val = mwexec("tar -xf {$configuration['rootfolder']}/mywebsql-3.7.zip -C {$config['websrv']['documentroot']}", true);
 				    $return_val = mwexec("cp -R {$configuration['rootfolder']}/{$clientDir} {$config['websrv']['documentroot']}", true);
 				    if ($return_val != 0) $input_errors[] = gettext("SQL Database Client")." ".gettext("Installation failed!");
@@ -115,6 +132,7 @@ if ($_POST) {
 						$errorDbClient = "<br />".gettext("SQL Database Client")." ".gettext("has been installed.")."<br />";	
 					}
 				}
+				// backup dir
 				// write mySQL config file
 				$mySqlconf = fopen($mySqlConfFile, "w");
 				fwrite($mySqlconf, "# WARNING: THIS IS AN AUTOMATICALLY CREATED FILE, DO NOT CHANGE THE CONTENT!\n");
@@ -190,14 +208,30 @@ if ($_POST) {
 		endif;
 	endif;
 
+	if (isset($_POST['backup']) && $_POST['backup']) {
+		$return_val = mwexec("mkdir -p {$configuration['backuppath']}", true);	// create dir if not exists
+		if (is_dir($configuration['backuppath'])) {
+			$return_val = mwexec("nohup tar -czf {$configuration['backuppath']}/mysqldata-`date +%Y-%m-%d-%H%M%S`.tar.gz -C {$configuration['rootfolder']} mysqldata mysql && date > {$logBackupDate} || echo -e {$backupFailedMsg} > {$logBackupDate} >/dev/null 2>&1 &", true);
+			if ($return_val == 0) {
+				$savemsg .= gettext("Backup process started in background successfully.");
+				exec("echo '{$date}: Backup process started in background.' >> {$logfile}");
+			} else {
+				$input_errors[] = gettext("Backup could not be started!");
+				exec("echo '{$date}: Backup could not be started!' >> {$logfile}");
+			}
+		} else {
+			$input_errors[] = gettext("Backup directory could not be created!");
+			exec("echo '{$date}: Backup directory could not be created!' >> {$logfile}");
+		}
+	}
 }
 
 $pconfig['enable'] = $configuration['enable'];
 $pconfig['port'] = !empty($configuration['port']) ? $configuration['port'] : "3306";
 $pconfig['listen'] = !empty($configuration['listen']) ? $configuration['listen'] : "127.0.0.1";
 $pconfig['auxparam'] = isset($configuration['auxparam']) ? $configuration['auxparam'] : "default_authentication_plugin = mysql_native_password\r\n";
-$pconfig['backupPath'] = !empty($configuration['backupPath']) ? $configuration['backupPath'] : "{$configuration['rootfolder']}/backup";
-$pconfig['dbClient'] = isset($configuration['dbClient']) ? $configuration['dbClient'] : true;
+$pconfig['backuppath'] = !empty($configuration['backuppath']) ? $configuration['backuppath'] : "{$configuration['rootfolder']}/backup";
+$pconfig['dbclient'] = isset($configuration['dbclient']) ? $configuration['dbclient'] : true;
 
 if (($message = ext_check_version("{$configuration['rootfolder']}/version_server.txt", "{$configName}", $configuration['version'], gettext("Maintenance"))) !== false) $savemsg .= $message;
 
@@ -222,9 +256,9 @@ function enable_change(enable_change) {
 	document.iform.port.disabled = endis;
 	document.iform.listen.disabled = endis;
 	document.iform.auxparam.disabled = endis;
-	document.iform.backupPath.disabled = endis;
-	document.iform.backupPathbrowsebtn.disabled = endis;
-	document.iform.dbClient.disabled = endis;
+	document.iform.backuppath.disabled = endis;
+	document.iform.backuppathbrowsebtn.disabled = endis;
+	document.iform.dbclient.disabled = endis;
 }
 //-->
 </script>
@@ -241,7 +275,7 @@ function enable_change(enable_change) {
         <?php if (!empty($savemsg)) print_info_box($savemsg);?>
         <table width="100%" border="0" cellpadding="6" cellspacing="0">
             <?php 
-				html_titleline(gettext("Status TEST 9"));
+				html_titleline(gettext("Status"));
             	html_text("installation_directory", gettext("Installation directory"), sprintf(gettext("The extension is installed in %s"), $configuration['rootfolder']));
 				html_text("productversion", "{$appName} ".gettext("Version"), $productVersion, false);
 			?>
@@ -250,14 +284,15 @@ function enable_change(enable_change) {
 				<td class="vtable"><span name="procinfo" id="procinfo"><?=get_process_info()?></span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PID:&nbsp;<span name="procinfo_pid" id="procinfo_pid"><?=get_process_pid()?></span></td>
             </tr>
             <?php
+				html_text("lastBackup", gettext("Last Backup"), exec("cat {$logBackupDate}"));
 				html_separator();
 				html_titleline_checkbox("enable", $configuration['appname'], $pconfig['enable'], gettext("Enable"), "enable_change(false)");
 				html_inputbox("port", gettext("Port"), $pconfig['port'], sprintf(gettext("Port to listen on. Only dynamic or private ports can be used (from %d through %d). Default port is %d."), 1025, 65535, 3306), true, 5);
             	html_inputbox("listen", gettext("IP Address"), $pconfig['listen'], sprintf(gettext("IP address to listen on. Use 0.0.0.0 for all host IPs. Default is %s."), "127.0.0.1"), true, 25);
 				html_textarea("auxparam", gettext("Additional Parameters"), $pconfig['auxparam'], sprintf(gettext("These parameters are added to the %s section of the %s configuration."), "[mysqld]", $configuration['appname']), false, 65, 3, false, false);
-				html_filechooser("backupPath", gettext("Backup directory"), $pconfig['backupPath'], gettext("Directory to store archive.tar files of the mysqldata folder."), $pconfig['backupPath'], true, 60);
-				html_checkbox("dbClient", gettext("SQL Database Client"), $pconfig['dbClient'], gettext("Use database administration client."));
-				if ($configuration['dbClient']) html_text("url", gettext("SQL Database Client")." ".gettext("URL"), $urlWebUI, false);
+				html_filechooser("backuppath", gettext("Backup directory"), $pconfig['backuppath'], gettext("Directory to store archive.tar files of the mysqldata folder."), $pconfig['backuppath'], true, 60);
+				html_checkbox("dbclient", gettext("SQL Database Administration Client"), $pconfig['dbclient'], gettext("Install the client.")." ".$webServerMsg);
+				if ($configuration['dbclient'] && $webServerReady) html_text("url", "&#9493;&#9472;&#9472;&nbsp;".gettext("URL"), $urlWebUI, false);
 			?>
         </table>
         <div id="submit">
@@ -266,7 +301,7 @@ function enable_change(enable_change) {
 			<input name="stop" type="submit" class="formbtn" title="<?=sprintf(gettext("Stop %s"), $appName);?>" value="<?=gettext("Stop");?>" />
 			<input name="restart" type="submit" class="formbtn" title="<?=sprintf(gettext("Restart %s"), $appName);?>" value="<?=gettext("Restart");?>" />
 			<input name="upgrade" type="submit" class="formbtn" title="<?=sprintf(gettext("Upgrade %s Packages"), $appName);?>" value="<?=gettext("Upgrade");?>" />
-			<input name="backup" type="submit" class="formbtn" title="<?=sprintf(gettext("Backup %s Folder"), "MySQLdata");?>" value="<?=gettext("Backup");?>" />
+			<input name="backup" type="submit" class="formbtn" title="<?=sprintf(gettext("Backup %s Data Folder"), "{$configuration['appname']}");?>" value="<?=gettext("Backup");?>" />
         </div>
 	</td></tr>
 	</table>

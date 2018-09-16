@@ -1,5 +1,5 @@
 ﻿Version Date        Description
-0.1     2018.09.11  initial release
+0.1b1   2018.09.16  first beta
 
 N: ...  new feature
 C: ...  changes
