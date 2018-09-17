@@ -211,14 +211,9 @@ if ($_POST) {
 	if (isset($_POST['backup']) && $_POST['backup']) {
 		$return_val = mwexec("mkdir -p {$configuration['backuppath']}", true);	// create dir if not exists
 		if (is_dir($configuration['backuppath'])) {
-			$return_val = mwexec("nohup tar -czf {$configuration['backuppath']}/mysqldata-`date +%Y-%m-%d-%H%M%S`.tar.gz -C {$configuration['rootfolder']} mysqldata mysql && date > {$logBackupDate} || echo -e {$backupFailedMsg} > {$logBackupDate} >/dev/null 2>&1 &", true);
-			if ($return_val == 0) {
-				$savemsg .= gettext("Backup process started in background successfully.");
-				exec("echo '{$date}: Backup process started in background.' >> {$logfile}");
-			} else {
-				$input_errors[] = gettext("Backup could not be started!");
-				exec("echo '{$date}: Backup could not be started!' >> {$logfile}");
-			}
+			mwexec("nohup tar -czf {$configuration['backuppath']}/mysqldata-`date +%Y-%m-%d-%H%M%S`.tar.gz -C {$configuration['rootfolder']} mysqldata mysql && date > {$logBackupDate} || echo -e {$backupFailedMsg} > {$logBackupDate} >/dev/null 2>&1 &", true);
+			$savemsg .= gettext("Backup process started in background.");
+			exec("echo '{$date}: Backup process started in background.' >> {$logfile}");
 		} else {
 			$input_errors[] = gettext("Backup directory could not be created!");
 			exec("echo '{$date}: Backup directory could not be created!' >> {$logfile}");
@@ -275,7 +270,7 @@ function enable_change(enable_change) {
         <?php if (!empty($savemsg)) print_info_box($savemsg);?>
         <table width="100%" border="0" cellpadding="6" cellspacing="0">
             <?php 
-				html_titleline(gettext("Status"));
+				html_titleline(gettext("Status 1"));
             	html_text("installation_directory", gettext("Installation directory"), sprintf(gettext("The extension is installed in %s"), $configuration['rootfolder']));
 				html_text("productversion", "{$appName} ".gettext("Version"), $productVersion, false);
 			?>
