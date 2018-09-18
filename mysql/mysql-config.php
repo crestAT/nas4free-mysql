@@ -69,7 +69,7 @@ $mySqlConfFile = "{$configuration['rootfolder']}/mysql/usr/local/etc/mysql/my.cn
 $productVersion = exec("{$configuration['rootfolder']}/mysqlinit -v | awk '/-server/ {print $2}'");
 $appName = "{$configuration['appname']} ".gettext("Server");			// for gettext
 $clientDir = "adminer";													// alt: mywebsql
-$backupFailedMsg = gettext("Last backup failed!");  
+$backupFailedMsg = "\<font color='red'\>\<b\>".gettext("Last backup failed!")."\<\/b\>\<\/font\>";  
 // -----------------------------------------------------------------------
 
 // Retrieve WebUI URL
@@ -85,6 +85,11 @@ if (!isset($config['websrv']['enable']) || !is_dir($config['websrv']['documentro
 else {
 	$webServerReady = true;
 	$webServerMsg = "";
+}
+
+function get_backup_info() {
+    global $logBackupDate;
+	return exec("cat {$logBackupDate}");	
 }
 
 function get_process_info() {
@@ -103,6 +108,7 @@ function get_process_pid() {
 if (is_ajax()) {
 	$procinfo['info'] = get_process_info();
 	$procinfo['pid'] = get_process_pid();
+	$procinfo['backup'] = get_backup_info();
 	render_ajax($procinfo);
 }
 
@@ -121,7 +127,7 @@ if ($_POST) {
 				$input_errors[] = sprintf(gettext("Parameter %s and/or %s must not be empty!"), gettext("Port"), gettext("IP Address"));
 			else {
 				// db client installation
-				$errorDbClient = " ";
+				$dbClientMsg = " ";
 				if ($configuration['dbclient'] && $webServerReady && !is_file("{$config['websrv']['documentroot']}/{$clientDir}/index.php")) {	// install db administration client
 				    #$return_val = mwexec("tar -xf {$configuration['rootfolder']}/mywebsql-3.7.zip -C {$config['websrv']['documentroot']}", true);
 				    $return_val = mwexec("cp -R {$configuration['rootfolder']}/{$clientDir} {$config['websrv']['documentroot']}", true);
@@ -129,10 +135,9 @@ if ($_POST) {
 				    else {
 					    chown("{$config['websrv']['documentroot']}/{$clientDir}", "www");
 					    chmod("{$config['websrv']['documentroot']}/{$clientDir}", 0775);
-						$errorDbClient = "<br />".gettext("SQL Database Client")." ".gettext("has been installed.")."<br />";	
+						$dbClientMsg = "<br />".gettext("SQL Database Client")." ".gettext("has been installed.")."<br />";	
 					}
 				}
-				// backup dir
 				// write mySQL config file
 				$mySqlconf = fopen($mySqlConfFile, "w");
 				fwrite($mySqlconf, "# WARNING: THIS IS AN AUTOMATICALLY CREATED FILE, DO NOT CHANGE THE CONTENT!\n");
@@ -144,10 +149,10 @@ if ($_POST) {
 				fclose($mySqlconf);
 		        chmod($mySqlConfFile, 0644);
 
-				$savemsg .= get_std_save_message(ext_save_config($configFile, $configuration)).$errorDbClient;	
+				$savemsg .= get_std_save_message(ext_save_config($configFile, $configuration)).$dbClientMsg."<br />";	
 			}
 		}
-	    else $savemsg .= get_std_save_message(ext_save_config($configFile, $configuration))." ";
+	    else $savemsg .= get_std_save_message(ext_save_config($configFile, $configuration))."<br />";
 	}
 
 	if (isset($_POST['start']) && $_POST['start']) {
@@ -209,11 +214,30 @@ if ($_POST) {
 	endif;
 
 	if (isset($_POST['backup']) && $_POST['backup']) {
-		$return_val = mwexec("mkdir -p {$configuration['backuppath']}", true);	// create dir if not exists
+		$backup_script = fopen("{$configuration['rootfolder']}/{$configName}-backup.sh", "w");
+		fwrite($backup_script, "#!/bin/sh"."\n# WARNING: THIS IS AN AUTOMATICALLY CREATED SCRIPT, DO NOT CHANGE THE CONTENT!\n");
+		fwrite($backup_script, "# Command for cron backup usage: {$configuration['rootfolder']}/{$configName}-backup.sh\n");
+		fwrite($backup_script, "logger {$appName} backup started"."\n");
+		fwrite($backup_script, "tar -czf {$configuration['backuppath']}/mysqldata-`date +%Y-%m-%d-%H%M%S`.tar.gz -C {$configuration['rootfolder']} mysqldata mysql"."\n");
+		fwrite($backup_script, "if [ $? == 0 ]; then"."\n");
+		fwrite($backup_script, "    logger {$appName} backup successfully finished"."\n");
+		fwrite($backup_script, "    date > {$logBackupDate}"."\n");
+		fwrite($backup_script, "else"."\n");
+		fwrite($backup_script, "    logger {$appName} backup failed"."\n");
+		fwrite($backup_script, "    echo {$backupFailedMsg} > {$logBackupDate}"."\n");
+		fwrite($backup_script, "fi"."\n");
+		fclose($backup_script);
+		chmod("{$configuration['rootfolder']}/{$configName}-backup.sh", 0755);
+		$savemsg .= sprintf(gettext("Command for cron backup usage: %s"), "{$configuration['rootfolder']}/{$configName}-backup.sh").".<br />";
+
+		$return_val = mwexec("mkdir -p -m 777 {$configuration['backuppath']}", true);	// create dir if not exists and set mode to 777
 		if (is_dir($configuration['backuppath'])) {
-			mwexec("nohup tar -czf {$configuration['backuppath']}/mysqldata-`date +%Y-%m-%d-%H%M%S`.tar.gz -C {$configuration['rootfolder']} mysqldata mysql && date > {$logBackupDate} || echo -e {$backupFailedMsg} > {$logBackupDate} >/dev/null 2>&1 &", true);
-			$savemsg .= gettext("Backup process started in background.");
-			exec("echo '{$date}: Backup process started in background.' >> {$logfile}");
+			$return_val = mwexec("nohup {$configuration['rootfolder']}/{$configName}-backup.sh >/dev/null 2>&1 &", true);
+			if ($return_val == 0) {
+				exec("echo ".gettext("Backup in progress!")." > {$logBackupDate}");
+				$savemsg .= gettext("Backup process started in background, the output goes to the system log.");
+				exec("echo '{$date}: Backup process started in background.' >> {$logfile}");
+			} else $input_errors[] = gettext("Backup process could not start!");
 		} else {
 			$input_errors[] = gettext("Backup directory could not be created!");
 			exec("echo '{$date}: Backup directory could not be created!' >> {$logfile}");
@@ -240,6 +264,7 @@ $(document).ready(function(){
 	gui.recall(0, 2000, '<?php echo $configName; ?>-config.php', null, function(data) { 
 		$('#procinfo').html(data.info);
 		$('#procinfo_pid').html(data.pid);
+		$('#procinfo_backup').html(data.backup);
 	});
 });
 //]]>
@@ -270,16 +295,19 @@ function enable_change(enable_change) {
         <?php if (!empty($savemsg)) print_info_box($savemsg);?>
         <table width="100%" border="0" cellpadding="6" cellspacing="0">
             <?php 
-				html_titleline(gettext("Status 1"));
+				html_titleline(gettext("Status"));
             	html_text("installation_directory", gettext("Installation directory"), sprintf(gettext("The extension is installed in %s"), $configuration['rootfolder']));
 				html_text("productversion", "{$appName} ".gettext("Version"), $productVersion, false);
 			?>
             <tr>
 				<td class="vncell"><?=gettext("Status");?></td>
-				<td class="vtable"><span name="procinfo" id="procinfo"><?=get_process_info()?></span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PID:&nbsp;<span name="procinfo_pid" id="procinfo_pid"><?=get_process_pid()?></span></td>
+				<td class="vtable"><span id="procinfo"><?=get_process_info()?></span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;PID:&nbsp;<span id="procinfo_pid"><?=get_process_pid()?></span></td>
+            </tr>
+            <tr>
+				<td class="vncell"><?=gettext("Last Backup");?></td>
+				<td class="vtable"><span id="procinfo_backup"><?=get_backup_info()?></span></td>
             </tr>
             <?php
-				html_text("lastBackup", gettext("Last Backup"), exec("cat {$logBackupDate}"));
 				html_separator();
 				html_titleline_checkbox("enable", $configuration['appname'], $pconfig['enable'], gettext("Enable"), "enable_change(false)");
 				html_inputbox("port", gettext("Port"), $pconfig['port'], sprintf(gettext("Port to listen on. Only dynamic or private ports can be used (from %d through %d). Default port is %d."), 1025, 65535, 3306), true, 5);
