@@ -80,7 +80,8 @@ $configuration['rc_uuid_stop'] = $configuration['shutdown'];
 ext_create_rc_commands($appName, $configuration['rc_uuid_start'], $configuration['rc_uuid_stop']);
 ext_save_config($configFile, $configuration);
 
-exec("cat {$install_dir}/create_admin.sql | mysql");
+#exec("su -m root -c 'cat {$install_dir}/create_mysqladmin.sql | mysql'");
+exec("cat {$install_dir}/create_mysqladmin.sql | mysql");
 require_once("{$install_dir}/{$configName}-stop.php");
 require_once("{$install_dir}/{$configName}-start.php");
 if ($new_installation) echo "\nInstallation completed, use WebGUI | Extensions | {$appName} to configure the application!\n";
