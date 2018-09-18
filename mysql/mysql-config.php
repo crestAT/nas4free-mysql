@@ -318,6 +318,9 @@ function enable_change(enable_change) {
 				if ($configuration['dbclient'] && $webServerReady) html_text("url", "&#9493;&#9472;&#9472;&nbsp;".gettext("URL"), $urlWebUI, false);
 			?>
         </table>
+        <div id="remarks">
+            <?php html_remark("note_user", gettext("Note"), sprintf(gettext("Default database administrator is set to %s with password %s."), "<b>mysqladmin</b>", "<b>mysqladmin</b>"));?>
+        </div>
         <div id="submit">
 			<input id="save" name="save" type="submit" class="formbtn" value="<?=gettext("Save");?>"/>
 			<input name="start" type="submit" class="formbtn" title="<?=sprintf(gettext("Start %s"), $appName);?>" value="<?=gettext("Start");?>" />

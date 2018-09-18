@@ -40,11 +40,11 @@ global $input_errors;
 global $savemsg;
 
 // fetch release archive
-$return_val = 0;#mwexec("fetch {$verify_hostname} -vo {$install_dir}/master.zip 'https://github.com/crestAT/nas4free-{$configName}/releases/download/{$version}/{$configName}-{$version_striped}.zip'", false);
+$return_val = mwexec("fetch {$verify_hostname} -vo {$install_dir}/master.zip 'https://github.com/crestAT/nas4free-{$configName}/releases/download/{$version}/{$configName}-{$version_striped}.zip'", false);
 if ($return_val == 0) {
-    $return_val = 0;#mwexec("tar -xf {$install_dir}/master.zip -C {$install_dir} --exclude='.git*' --strip-components 2", true);
+    $return_val = mwexec("tar -xf {$install_dir}/master.zip -C {$install_dir} --exclude='.git*' --strip-components 2", true);
     if ($return_val == 0) {
-        #exec("rm {$install_dir}/master.zip");
+        exec("rm {$install_dir}/master.zip");
         exec("chmod -R 775 {$install_dir}");
         require_once("{$install_dir}/ext/extension-lib.inc");
         $configFile = "{$install_dir}/ext/{$configName}.conf";
