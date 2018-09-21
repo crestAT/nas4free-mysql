@@ -61,12 +61,11 @@ $pgtitle = array(gettext("Extensions"), $configuration['appname']." ".$configura
 if (!isset($configuration) || !is_array($configuration)) $configuration = array();
 
 // initialize variables --------------------------------------------------
-$pidfile = "/var/tmp/mysql.sock.lock";
 $logfile = "{$configuration['rootfolder']}/{$configName}_ext.log";
 $logBackupDate = "{$configuration['rootfolder']}/{$configName}_backup-date.txt";
 $logUpgrade = "{$configuration['rootfolder']}/{$configName}_upgrade.log";
-$mySqlConfFile = "{$configuration['rootfolder']}/mysql/usr/local/etc/mysql/my.cnf";
-$productVersion = exec("{$configuration['rootfolder']}/mysqlinit -v | awk '/-server/ {print $2}'");
+$mySqlConfFile = "{$configuration['rootfolder']}/mysql/usr/local/etc/mysql/my.cnf";		// /usr/local/etc/mysql/my.cnf on full
+$productVersion = exec("{$configuration['rootfolder']}/mysqlinit -v | awk '/ Ver / {print $3}'");
 $appName = "{$configuration['appname']} ".gettext("Server");			// for gettext
 $clientDir = "adminer";													// alt: mywebsql
 $backupFailedMsg = "\<font color='red'\>\<b\>".gettext("Last backup failed!")."\<\/b\>\<\/font\>";  
@@ -93,15 +92,13 @@ function get_backup_info() {
 }
 
 function get_process_info() {
-    global $pidfile;
-    if (exec("ps acx | grep -f $pidfile")) { $state = '<a style=" background-color: #00ff00; ">&nbsp;&nbsp;<b>'.gettext("running").'</b>&nbsp;&nbsp;</a>'; }
+    if (exec("pgrep mysqld")) { $state = '<a style=" background-color: #00ff00; ">&nbsp;&nbsp;<b>'.gettext("running").'</b>&nbsp;&nbsp;</a>'; }
     else { $state = '<a style=" background-color: #ff0000; ">&nbsp;&nbsp;<b>'.gettext("stopped").'</b>&nbsp;&nbsp;</a>'; }
 	return ($state);
 }
 
 function get_process_pid() {
-    global $pidfile;
-    exec("cat $pidfile", $state);
+    exec("pgrep mysqld", $state);
 	return ($state[0]);
 }
 
@@ -137,17 +134,19 @@ if ($_POST) {
 					    chmod("{$config['websrv']['documentroot']}/{$clientDir}", 0775);
 						$dbClientMsg = "<br />".gettext("SQL Database Client")." ".gettext("has been installed.");	
 					}
-				}
+				} elseif (is_file("{$config['websrv']['documentroot']}/{$clientDir}/index.php")) mwexec("rm -R {$config['websrv']['documentroot']}/{$clientDir}");  
 				// write mySQL config file
-				$mySqlconf = fopen($mySqlConfFile, "w");
-				fwrite($mySqlconf, "# WARNING: THIS IS AN AUTOMATICALLY CREATED FILE, DO NOT CHANGE THE CONTENT!\n");
-				fwrite($mySqlconf, "[client]\nport = {$configuration['port']}\n\n");
-				fwrite($mySqlconf, "[mysqld]\nport = {$configuration['port']}\n");
-				fwrite($mySqlconf, "bind-address = {$configuration['listen']}\n");		
-				fwrite($mySqlconf, str_replace("\r", "", $configuration['auxparam']));
-				#fwrite($mySqlconf, "default_authentication_plugin = mysql_native_password\n");		// set in default params
-				fclose($mySqlconf);
-		        chmod($mySqlConfFile, 0644);
+				if (is_dir("{$configuration['rootfolder']}/mysql")) {	// on full: $mySqlConfFile = "/usr/local/etc/mysql/my.cnf";
+					$mySqlconf = fopen($mySqlConfFile, "w");
+					fwrite($mySqlconf, "# WARNING: THIS IS AN AUTOMATICALLY CREATED FILE, DO NOT CHANGE THE CONTENT!\n");
+					fwrite($mySqlconf, "[client]\nport = {$configuration['port']}\n\n");
+					fwrite($mySqlconf, "[mysqld]\nport = {$configuration['port']}\n");
+					fwrite($mySqlconf, "bind-address = {$configuration['listen']}\n");
+					fwrite($mySqlconf, str_replace("\r", "", $configuration['auxparam']));
+					#fwrite($mySqlconf, "default_authentication_plugin = mysql_native_password\n");		// set in default params
+					fclose($mySqlconf);
+			        chmod($mySqlConfFile, 0644);
+				}  
 
 				$savemsg .= get_std_save_message(ext_save_config($configFile, $configuration)).$dbClientMsg."<br />";	
 			}
@@ -214,7 +213,7 @@ if ($_POST) {
 		fwrite($backup_script, "#!/bin/sh"."\n# WARNING: THIS IS AN AUTOMATICALLY CREATED SCRIPT, DO NOT CHANGE THE CONTENT!\n");
 		fwrite($backup_script, "# Command for cron backup usage: {$configuration['rootfolder']}/{$configName}-backup.sh\n");
 		fwrite($backup_script, "logger {$appName} backup started"."\n");
-		fwrite($backup_script, "tar -czf {$configuration['backuppath']}/mysqldata-`date +%Y-%m-%d-%H%M%S`.tar.gz -C {$configuration['rootfolder']} mysqldata mysql"."\n");
+		fwrite($backup_script, "tar -czf {$configuration['backuppath']}/mysqldata-`date +%Y-%m-%d-%H%M%S`.tar.gz -C {$configuration['rootfolder']} mysqldata"."\n");
 		fwrite($backup_script, "if [ $? == 0 ]; then"."\n");
 		fwrite($backup_script, "    logger {$appName} backup successfully finished"."\n");
 		fwrite($backup_script, "    date > {$logBackupDate}"."\n");
