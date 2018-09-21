@@ -56,6 +56,6 @@ if ($domain <> "nas4free") $return_val += mwexec("find {$rootfolder}/locale-{$co
 if ($return_val == 0) exec("logger {$configName}-extension: started");
 else exec("logger {$configName}-extension: error(s) during startup, failed with return value = {$return_val}");
 
-mwexec("{$configuration['rootfolder']}/{$configName}init -o", true);										// initialize 
-if (!$configuration['enable']) mwexec("{$configuration['rootfolder']}/{$configName}init -p", true);		// stop if not enabled
+mwexec("{$configuration['rootfolder']}/{$configName}init", false);		// initialze
+if (!$configuration['enable']) mwexec("{$configuration['rootfolder']}/{$configName}init -p", false);	// stop if disabled
 ?>

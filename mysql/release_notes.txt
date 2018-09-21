@@ -1,4 +1,5 @@
 ﻿Version Date        Description
+0.1b2   2018.09.21  some improvements for SQL admin user and changes in mysqlinit
 0.1b1   2018.09.16  first beta
 
 N: ...  new feature

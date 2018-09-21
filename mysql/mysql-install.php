@@ -25,7 +25,7 @@
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
     SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
-$version = "v0.1b1";													// extension version
+$version = "v0.1b2";													// extension version
 $appName = "MySQL";
 $configName = strtolower($appName);
 
@@ -40,11 +40,11 @@ global $input_errors;
 global $savemsg;
 
 // fetch release archive
-$return_val = mwexec("fetch {$verify_hostname} -vo {$install_dir}/master.zip 'https://github.com/crestAT/nas4free-{$configName}/releases/download/{$version}/{$configName}-{$version_striped}.zip'", false);
+$return_val = 0;#mwexec("fetch {$verify_hostname} -vo {$install_dir}/master.zip 'https://github.com/crestAT/nas4free-{$configName}/releases/download/{$version}/{$configName}-{$version_striped}.zip'", false);
 if ($return_val == 0) {
-    $return_val = mwexec("tar -xf {$install_dir}/master.zip -C {$install_dir} --exclude='.git*' --strip-components 2", true);
+    $return_val = 0;#mwexec("tar -xf {$install_dir}/master.zip -C {$install_dir} --exclude='.git*' --strip-components 2", true);
     if ($return_val == 0) {
-        exec("rm {$install_dir}/master.zip");
+        #exec("rm {$install_dir}/master.zip");
         exec("chmod -R 775 {$install_dir}");
         require_once("{$install_dir}/ext/extension-lib.inc");
         $configFile = "{$install_dir}/ext/{$configName}.conf";
@@ -80,9 +80,10 @@ $configuration['rc_uuid_stop'] = $configuration['shutdown'];
 ext_create_rc_commands($appName, $configuration['rc_uuid_start'], $configuration['rc_uuid_stop']);
 ext_save_config($configFile, $configuration);
 
-#exec("su -m root -c 'cat {$install_dir}/create_mysqladmin.sql | mysql'");
-exec("cat {$install_dir}/create_mysqladmin.sql | mysql");
-require_once("{$install_dir}/{$configName}-stop.php");
-require_once("{$install_dir}/{$configName}-start.php");
-if ($new_installation) echo "\nInstallation completed, use WebGUI | Extensions | {$appName} to configure the application!\n";
+if ($new_installation) {
+	mwexec("{$configuration['rootfolder']}/{$configName}init", false);					// initialze and start mySQL
+	exec("cat {$configuration['rootfolder']}/create_mysqladmin.sql | mysql");			// create admin user
+}
+require_once("{$configuration['rootfolder']}/{$configName}-start.php");					// initialize extension and eventually start mySQL if already set up
+echo "\nInstallation completed, use WebGUI | Extensions | {$appName} to configure the application!\n";
 ?>

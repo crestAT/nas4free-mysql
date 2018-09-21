@@ -135,7 +135,7 @@ if ($_POST) {
 				    else {
 					    chown("{$config['websrv']['documentroot']}/{$clientDir}", "www");
 					    chmod("{$config['websrv']['documentroot']}/{$clientDir}", 0775);
-						$dbClientMsg = "<br />".gettext("SQL Database Client")." ".gettext("has been installed.")."<br />";	
+						$dbClientMsg = "<br />".gettext("SQL Database Client")." ".gettext("has been installed.");	
 					}
 				}
 				// write mySQL config file
@@ -168,30 +168,26 @@ if ($_POST) {
 	}
 
 	if ((isset($_POST['stop']) && $_POST['stop']) || ((isset($_POST['save']) && $_POST['save']) && !$configuration['enable'])) {
-		if (empty($input_errors)) {
-			$return_val = mwexec("{$configuration['rootfolder']}/mysqlinit -p", true);
-			if ($return_val == 0) {
-				$savemsg .= sprintf(gettext("%s stopped successfully."), $appName);
-				exec("echo '{$date}: {$configuration['appname']} successfully stopped' >> {$logfile}");
-			}
-			else {
-				$input_errors[] = sprintf(gettext("%s stop failed."), $appName);
-				exec("echo '{$date}: {$configuration['appname']} stop failed' >> {$logfile}");
-			}
+		$return_val = mwexec("{$configuration['rootfolder']}/mysqlinit -p", true);
+		if ($return_val == 0) {
+			$savemsg .= sprintf(gettext("%s stopped successfully."), $appName);
+			exec("echo '{$date}: {$configuration['appname']} successfully stopped' >> {$logfile}");
+		}
+		else {
+			$input_errors[] = sprintf(gettext("%s stop failed."), $appName);
+			exec("echo '{$date}: {$configuration['appname']} stop failed' >> {$logfile}");
 		}
 	}
 
 	if ((isset($_POST['restart']) && $_POST['restart']) || ((isset($_POST['save']) && $_POST['save']) && $configuration['enable'])) {
-		if (empty($input_errors)) {
-			$return_val = mwexec("{$configuration['rootfolder']}/mysqlinit -r", true);
-			if ($return_val == 0) {
-				$savemsg .= sprintf(gettext("%s restarted successfully."), $appName);
-				exec("echo '{$date}: {$configuration['appname']} successfully restarted' >> {$logfile}");
-			}
-			else {
-				$input_errors[] = sprintf(gettext("%s restart failed."), $appName);
-				exec("echo '{$date}: {$configuration['appname']} restart failed' >> {$logfile}");
-			}
+		$return_val = mwexec("{$configuration['rootfolder']}/mysqlinit -r", true);
+		if ($return_val == 0) {
+			$savemsg .= sprintf(gettext("%s restarted successfully."), $appName);
+			exec("echo '{$date}: {$configuration['appname']} successfully restarted' >> {$logfile}");
+		}
+		else {
+			$input_errors[] = sprintf(gettext("%s restart failed."), $appName);
+			exec("echo '{$date}: {$configuration['appname']} restart failed' >> {$logfile}");
 		}
 	}
 
@@ -279,6 +275,11 @@ function enable_change(enable_change) {
 	document.iform.backuppath.disabled = endis;
 	document.iform.backuppathbrowsebtn.disabled = endis;
 	document.iform.dbclient.disabled = endis;
+	document.iform.start.disabled = endis;
+	document.iform.stop.disabled = endis;
+	document.iform.restart.disabled = endis;
+	document.iform.upgrade.disabled = endis;
+	document.iform.backup.disabled = endis;
 }
 //-->
 </script>
@@ -313,7 +314,7 @@ function enable_change(enable_change) {
 				html_inputbox("port", gettext("Port"), $pconfig['port'], sprintf(gettext("Port to listen on. Only dynamic or private ports can be used (from %d through %d). Default port is %d."), 1025, 65535, 3306), true, 5);
             	html_inputbox("listen", gettext("IP Address"), $pconfig['listen'], sprintf(gettext("IP address to listen on. Use 0.0.0.0 for all host IPs. Default is %s."), "127.0.0.1"), true, 25);
 				html_textarea("auxparam", gettext("Additional Parameters"), $pconfig['auxparam'], sprintf(gettext("These parameters are added to the %s section of the %s configuration."), "[mysqld]", $configuration['appname']), false, 65, 3, false, false);
-				html_filechooser("backuppath", gettext("Backup directory"), $pconfig['backuppath'], gettext("Directory to store archive.tar files of the mysqldata folder."), $pconfig['backuppath'], true, 60);
+				html_filechooser("backuppath", gettext("Backup Directory"), $pconfig['backuppath'], sprintf(gettext("Directory to store compressed archive files of the %s folder."), "mysqldata"), $pconfig['backuppath'], true, 60);
 				html_checkbox("dbclient", gettext("SQL Database Administration Client"), $pconfig['dbclient'], gettext("Install the client.")." ".$webServerMsg);
 				if ($configuration['dbclient'] && $webServerReady) html_text("url", "&#9493;&#9472;&#9472;&nbsp;".gettext("URL"), $urlWebUI, false);
 			?>
